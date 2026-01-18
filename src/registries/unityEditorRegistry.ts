@@ -21,6 +21,42 @@ interface UnityEditorInstallation {
 }
 
 /**
+ * Validates package name to prevent path traversal attacks.
+ * Valid Unity/npm package names: lowercase letters, numbers, hyphens, dots, underscores, and scopes (@org/pkg)
+ * Rejects: .., absolute paths, special characters
+ */
+function isValidPackageName(packageName: string): boolean {
+  // Reject empty or excessively long names
+  if (!packageName || packageName.length > 214) {
+    return false;
+  }
+
+  // Reject path traversal patterns
+  if (
+    packageName.includes("..") ||
+    packageName.startsWith("/") ||
+    packageName.startsWith("\\") ||
+    /[<>:"|?*]/.test(packageName)
+  ) {
+    return false;
+  }
+
+  // Valid npm/Unity package name pattern
+  // Allows: @scope/package-name, com.unity.package-name
+  const validPattern = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+  return validPattern.test(packageName);
+}
+
+/**
+ * Validates that resolved path stays within base directory
+ */
+function isPathWithinBase(resolvedPath: string, basePath: string): boolean {
+  const normalizedResolved = path.resolve(resolvedPath);
+  const normalizedBase = path.resolve(basePath);
+  return normalizedResolved.startsWith(normalizedBase + path.sep);
+}
+
+/**
  * Unity Editor Registry Client
  * Reads built-in packages from Unity Editor installation
  */
@@ -229,6 +265,11 @@ export class UnityEditorRegistryClient implements RegistryClient {
    * Get package info from any installed Unity Editor
    */
   async getPackageInfo(packageName: string): Promise<PackageInfo | null> {
+    // Validate package name to prevent path traversal
+    if (!isValidPackageName(packageName)) {
+      return null;
+    }
+
     const cached = this.packageCache.get(packageName);
     if (cached) {
       return cached;
@@ -239,6 +280,11 @@ export class UnityEditorRegistryClient implements RegistryClient {
     for (const installation of installations) {
       const builtInPath = this.getBuiltInPackagesPath(installation.path);
       const packageDir = path.join(builtInPath, packageName);
+
+      // Verify path stays within built-in packages directory
+      if (!isPathWithinBase(packageDir, builtInPath)) {
+        return null;
+      }
 
       const info = this.readPackageJson(packageDir);
       if (info) {
@@ -255,12 +301,22 @@ export class UnityEditorRegistryClient implements RegistryClient {
    * Each Unity version may have a different version of the same package
    */
   async getVersions(packageName: string): Promise<string[]> {
+    // Validate package name to prevent path traversal
+    if (!isValidPackageName(packageName)) {
+      return [];
+    }
+
     const installations = this.findEditorInstallations();
     const versions = new Set<string>();
 
     for (const installation of installations) {
       const builtInPath = this.getBuiltInPackagesPath(installation.path);
       const packageDir = path.join(builtInPath, packageName);
+
+      // Verify path stays within built-in packages directory
+      if (!isPathWithinBase(packageDir, builtInPath)) {
+        continue;
+      }
 
       const info = this.readPackageJson(packageDir);
       if (info && info.version) {
