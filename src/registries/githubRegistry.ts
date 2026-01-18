@@ -10,6 +10,7 @@ import {
   RegistryError,
   RegistryErrorCode,
 } from "./registryClient";
+import { compareVersions } from "./versionUtils";
 
 /**
  * Parsed GitHub URL components
@@ -431,35 +432,4 @@ export class GitHubRegistryClient implements RegistryClient {
     this.branchesCache.clear();
     this.packageInfoCache.clear();
   }
-}
-
-/**
- * Compare semver versions
- */
-function compareVersions(a: string, b: string): number {
-  const partsA = a.split(/[.-]/).map((p) => (isNaN(Number(p)) ? p : Number(p)));
-  const partsB = b.split(/[.-]/).map((p) => (isNaN(Number(p)) ? p : Number(p)));
-
-  const maxLen = Math.max(partsA.length, partsB.length);
-  for (let i = 0; i < maxLen; i++) {
-    const partA = partsA[i] ?? 0;
-    const partB = partsB[i] ?? 0;
-
-    if (typeof partA === "number" && typeof partB === "number") {
-      if (partA !== partB) {
-        return partA - partB;
-      }
-      continue;
-    }
-
-    const strA = String(partA);
-    const strB = String(partB);
-    if (strA !== strB) {
-      if (typeof partA === "string" && typeof partB === "number") return -1;
-      if (typeof partA === "number" && typeof partB === "string") return 1;
-      return strA.localeCompare(strB);
-    }
-  }
-
-  return 0;
 }

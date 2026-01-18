@@ -9,7 +9,14 @@ export {
   Cache,
   RegistryError,
   RegistryErrorCode,
+  NpmAllPackagesResponse,
+  NpmPackageEntry,
+  NpmVersionInfo,
+  NpmPackageDetailResponse,
 } from "./registryClient";
+
+// Version utilities
+export { compareVersions, sortVersionsDescending } from "./versionUtils";
 
 // Registry implementations
 export { UnityRegistryClient } from "./unityRegistry";
