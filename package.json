@@ -1,0 +1,49 @@
+{
+  "name": "upm-lsp",
+  "version": "0.1.0",
+  "description": "Language Server for Unity Package Manager manifest.json",
+  "main": "dist/server.js",
+  "bin": {
+    "upm-lsp": "./dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "unity",
+    "upm",
+    "package-manager",
+    "language-server",
+    "lsp"
+  ],
+  "author": "bigdra50",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bigdra50/upm-lsp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bigdra50/upm-lsp/issues"
+  },
+  "homepage": "https://github.com/bigdra50/upm-lsp#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12",
+    "vscode-uri": "^3.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "vitest": "^2.0.0",
+    "eslint": "^9.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0"
+  }
+}

@@ -1,0 +1,173 @@
+# upm-lsp
+
+Language Server Protocol (LSP) implementation for Unity Package Manager `Packages/manifest.json`.
+
+## Features
+
+### Completion
+
+- Package names from Unity Registry and OpenUPM
+- Version numbers for packages
+- Top-level keys (`dependencies`, `scopedRegistries`, `testables`, etc.)
+- Scoped registry properties (`name`, `url`, `scopes`)
+
+### Hover Information
+
+- Package metadata (name, version, description, Unity compatibility)
+- Built-in module information (com.unity.modules.*)
+- GitHub repository details for git URL dependencies
+
+### Diagnostics
+
+- JSON syntax errors
+- Unknown package warnings
+- Invalid version detection
+- Missing required fields in scoped registries
+- Empty scopes array detection
+
+## Supported Package Sources
+
+| Source | Description | Features |
+|--------|-------------|----------|
+| Unity Registry | `packages.unity.com` | Completion, Hover, Validation |
+| Unity Editor (Local) | Built-in packages from installed Unity Editor | Accurate version validation for core packages |
+| OpenUPM | `package.openupm.com` | Completion, Hover, Validation |
+| GitHub | Git URLs (`git+https://github.com/...`) | Hover (repo info, tags) |
+
+### Unity Editor Integration
+
+upm-lsp reads built-in packages directly from your local Unity Editor installation. This provides accurate version information for core packages like `com.unity.ugui`, `com.unity.textmeshpro`, etc., which are not available on the public registry.
+
+Supported paths:
+- macOS: `/Applications/Unity/Hub/Editor/*/`
+- Windows: `C:\Program Files\Unity\Hub\Editor\*\`
+- Linux: `~/Unity/Hub/Editor/*/`
+
+## Installation
+
+### From npm (recommended)
+
+```bash
+npm install -g upm-lsp
+```
+
+### From source
+
+```bash
+git clone https://github.com/bigdra50/upm-lsp.git
+cd upm-lsp
+npm install
+npm run build
+npm link
+```
+
+## Editor Setup
+
+### Neovim (nvim-lspconfig)
+
+Add to your Neovim configuration:
+
+```lua
+-- Optional: Set filetype for manifest.json
+vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
+  pattern = "*/Packages/manifest.json",
+  callback = function()
+    vim.bo.filetype = "json.upm"
+  end,
+})
+
+-- LSP configuration
+local lspconfig = require("lspconfig")
+local configs = require("lspconfig.configs")
+
+if not configs.upm_lsp then
+  configs.upm_lsp = {
+    default_config = {
+      cmd = { "upm-lsp", "--stdio" },
+      filetypes = { "json", "json.upm" },
+      root_dir = lspconfig.util.root_pattern("Packages/manifest.json", "Assets"),
+      single_file_support = true,
+    },
+  }
+end
+
+lspconfig.upm_lsp.setup({})
+```
+
+### VSCode
+
+VSCode extension is planned for future releases.
+
+## Architecture
+
+```
+src/
+├── server.ts                    # LSP entry point (stdio)
+├── types.ts                     # Type definitions
+├── providers/
+│   ├── completionProvider.ts    # Package/version completion
+│   ├── hoverProvider.ts         # Package info on hover
+│   ├── diagnosticProvider.ts    # Validation and diagnostics
+│   └── index.ts
+└── registries/
+    ├── registryClient.ts        # Base interface and cache
+    ├── unityRegistry.ts         # packages.unity.com
+    ├── unityEditorRegistry.ts   # Local Unity Editor packages
+    ├── openUpmRegistry.ts       # package.openupm.com
+    ├── githubRegistry.ts        # GitHub API for git URLs
+    └── index.ts
+```
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Build
+npm run build
+
+# Watch mode (rebuild on changes)
+npm run watch
+
+# Link for local testing
+npm link
+```
+
+## How It Works
+
+```mermaid
+flowchart TB
+    subgraph Editor
+        NV[Neovim]
+        VS[VSCode]
+    end
+
+    subgraph LSP["upm-lsp"]
+        Server[Language Server]
+    end
+
+    subgraph Sources["Package Sources"]
+        UE[Unity Editor<br/>Local Installation]
+        UR[packages.unity.com<br/>Unity Registry]
+        OP[package.openupm.com<br/>OpenUPM]
+        GH[api.github.com<br/>GitHub API]
+    end
+
+    NV <-->|stdio| Server
+    VS <-->|stdio| Server
+
+    Server --> UE
+    Server --> UR
+    Server --> OP
+    Server --> GH
+
+    UE -.-|Core packages<br/>accurate versions| Server
+    UR -.-|Official packages| Server
+    OP -.-|Community packages| Server
+    GH -.-|Git URL info| Server
+```
+
+## License
+
+MIT
