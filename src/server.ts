@@ -269,15 +269,16 @@ connection.onInitialized(() => {
   connection.console.log("UPM Language Server ready");
 
   // Log detected Unity Editor installations
-  const editors = unityEditorRegistry.getInstalledEditors();
-  if (editors.length > 0) {
-    connection.console.log(`Found ${editors.length} Unity Editor installation(s):`);
-    for (const editor of editors) {
-      connection.console.log(`  - ${editor.version}`);
+  unityEditorRegistry.getInstalledEditors().then((editors) => {
+    if (editors.length > 0) {
+      connection.console.log(`Found ${editors.length} Unity Editor installation(s):`);
+      for (const editor of editors) {
+        connection.console.log(`  - ${editor.version}`);
+      }
+    } else {
+      connection.console.log("No Unity Editor installations found (built-in package validation limited)");
     }
-  } else {
-    connection.console.log("No Unity Editor installations found (built-in package validation limited)");
-  }
+  }).catch(() => {});
 
   // Pre-fetch package list in background
   getAllPackages().catch(() => {});

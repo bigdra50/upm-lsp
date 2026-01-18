@@ -5,7 +5,7 @@
  * Core packages are bundled with the Editor and not available on packages.unity.com
  */
 
-import * as fs from "fs";
+import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
 
@@ -123,7 +123,7 @@ export class UnityEditorRegistryClient implements RegistryClient {
   /**
    * Find all installed Unity Editor versions
    */
-  private findEditorInstallations(): UnityEditorInstallation[] {
+  private async findEditorInstallations(): Promise<UnityEditorInstallation[]> {
     if (this.editorInstallations !== null) {
       return this.editorInstallations;
     }
@@ -132,12 +132,14 @@ export class UnityEditorRegistryClient implements RegistryClient {
     const basePaths = this.getEditorBasePaths();
 
     for (const basePath of basePaths) {
-      if (!fs.existsSync(basePath)) {
+      try {
+        await fs.access(basePath);
+      } catch {
         continue;
       }
 
       try {
-        const entries = fs.readdirSync(basePath, { withFileTypes: true });
+        const entries = await fs.readdir(basePath, { withFileTypes: true });
         for (const entry of entries) {
           if (!entry.isDirectory()) continue;
           if (entry.name.startsWith(".")) continue;
@@ -145,11 +147,14 @@ export class UnityEditorRegistryClient implements RegistryClient {
           const editorPath = path.join(basePath, entry.name);
           const builtInPath = this.getBuiltInPackagesPath(editorPath);
 
-          if (fs.existsSync(builtInPath)) {
+          try {
+            await fs.access(builtInPath);
             installations.push({
               version: entry.name,
               path: editorPath,
             });
+          } catch {
+            // builtInPath does not exist
           }
         }
       } catch {
@@ -167,15 +172,17 @@ export class UnityEditorRegistryClient implements RegistryClient {
   /**
    * Read package.json from a built-in package directory
    */
-  private readPackageJson(packageDir: string): PackageInfo | null {
+  private async readPackageJson(packageDir: string): Promise<PackageInfo | null> {
     const packageJsonPath = path.join(packageDir, "package.json");
 
-    if (!fs.existsSync(packageJsonPath)) {
+    try {
+      await fs.access(packageJsonPath);
+    } catch {
       return null;
     }
 
     try {
-      const content = fs.readFileSync(packageJsonPath, "utf-8");
+      const content = await fs.readFile(packageJsonPath, "utf-8");
       const json = JSON.parse(content);
 
       return {
@@ -200,25 +207,27 @@ export class UnityEditorRegistryClient implements RegistryClient {
   /**
    * Get all built-in packages from a specific Unity Editor version
    */
-  private getPackagesFromEditor(
+  private async getPackagesFromEditor(
     editorPath: string
-  ): Map<string, PackageInfo> {
+  ): Promise<Map<string, PackageInfo>> {
     const packages = new Map<string, PackageInfo>();
     const builtInPath = this.getBuiltInPackagesPath(editorPath);
 
-    if (!fs.existsSync(builtInPath)) {
+    try {
+      await fs.access(builtInPath);
+    } catch {
       return packages;
     }
 
     try {
-      const entries = fs.readdirSync(builtInPath, { withFileTypes: true });
+      const entries = await fs.readdir(builtInPath, { withFileTypes: true });
 
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         if (!entry.name.startsWith("com.unity.")) continue;
 
         const packageDir = path.join(builtInPath, entry.name);
-        const packageInfo = this.readPackageJson(packageDir);
+        const packageInfo = await this.readPackageJson(packageDir);
 
         if (packageInfo) {
           packages.set(packageInfo.name, packageInfo);
@@ -242,11 +251,11 @@ export class UnityEditorRegistryClient implements RegistryClient {
       return cached;
     }
 
-    const installations = this.findEditorInstallations();
+    const installations = await this.findEditorInstallations();
     const allPackages = new Map<string, PackageInfo>();
 
     for (const installation of installations) {
-      const packages = this.getPackagesFromEditor(installation.path);
+      const packages = await this.getPackagesFromEditor(installation.path);
 
       for (const [name, info] of packages) {
         // Keep the newest version found
@@ -275,7 +284,7 @@ export class UnityEditorRegistryClient implements RegistryClient {
       return cached;
     }
 
-    const installations = this.findEditorInstallations();
+    const installations = await this.findEditorInstallations();
 
     for (const installation of installations) {
       const builtInPath = this.getBuiltInPackagesPath(installation.path);
@@ -286,7 +295,7 @@ export class UnityEditorRegistryClient implements RegistryClient {
         return null;
       }
 
-      const info = this.readPackageJson(packageDir);
+      const info = await this.readPackageJson(packageDir);
       if (info) {
         this.packageCache.set(packageName, info);
         return info;
@@ -306,7 +315,7 @@ export class UnityEditorRegistryClient implements RegistryClient {
       return [];
     }
 
-    const installations = this.findEditorInstallations();
+    const installations = await this.findEditorInstallations();
     const versions = new Set<string>();
 
     for (const installation of installations) {
@@ -318,7 +327,7 @@ export class UnityEditorRegistryClient implements RegistryClient {
         continue;
       }
 
-      const info = this.readPackageJson(packageDir);
+      const info = await this.readPackageJson(packageDir);
       if (info && info.version) {
         versions.add(info.version);
       }
@@ -358,7 +367,7 @@ export class UnityEditorRegistryClient implements RegistryClient {
   /**
    * Get list of installed Unity Editor versions
    */
-  getInstalledEditors(): UnityEditorInstallation[] {
+  async getInstalledEditors(): Promise<UnityEditorInstallation[]> {
     return this.findEditorInstallations();
   }
 
