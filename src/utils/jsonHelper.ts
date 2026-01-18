@@ -402,6 +402,24 @@ export function parseJsonErrorPosition(lineIndex: LineIndex, errorMessage: strin
 }
 
 /**
+ * Get the version value for a package name in dependencies
+ * Returns null if package not found
+ */
+export function getVersionForPackage(text: string, packageName: string): string | null {
+  const boundaries = findDependenciesBoundaries(text);
+  if (!boundaries) return null;
+
+  const depsContent = text.slice(boundaries.start, boundaries.end);
+
+  // Match "packageName": "versionValue"
+  const escapedName = packageName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`"${escapedName}"\\s*:\\s*"([^"]*)"`, "m");
+  const match = depsContent.match(pattern);
+
+  return match ? match[1] : null;
+}
+
+/**
  * Check if value is a GitHub/Git URL
  */
 export function isGitHubUrl(value: string): boolean {

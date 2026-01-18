@@ -19,6 +19,7 @@ import {
   findTokenAtPosition,
   determineTokenType,
   extractGitHubUrl,
+  getVersionForPackage,
   TokenLocation,
   TokenType,
 } from "../utils/jsonHelper";
@@ -237,6 +238,21 @@ export async function getHover(
           contents: createPackageHoverContent(packageInfo),
           range: token.range,
         };
+      }
+
+      // If not found in registry, check if it's a GitHub URL package
+      const versionValue = getVersionForPackage(document.getText(), token.value);
+      if (versionValue) {
+        const gitHubUrl = extractGitHubUrl(versionValue);
+        if (gitHubUrl) {
+          const repoInfo = await registryClient.getGitHubRepoInfo(gitHubUrl);
+          if (repoInfo) {
+            return {
+              contents: createGitHubHoverContent(repoInfo),
+              range: token.range,
+            };
+          }
+        }
       }
       break;
     }
