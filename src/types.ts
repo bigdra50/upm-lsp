@@ -148,4 +148,11 @@ export interface ProviderRegistryClient {
    * @returns Repository info or null if not accessible
    */
   getGitHubRepoInfo(url: string): Promise<GitHubRepoInfo | null>;
+
+  /**
+   * Get available versions for a package
+   * @param packageName - Package identifier
+   * @returns Array of version strings (sorted newest first)
+   */
+  getVersions(packageName: string): Promise<string[]>;
 }

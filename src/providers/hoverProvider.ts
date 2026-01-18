@@ -20,6 +20,7 @@ import {
   determineTokenType,
   extractGitHubUrl,
   getVersionForPackage,
+  getPackageNameForVersion,
   TokenLocation,
   TokenType,
 } from "../utils/jsonHelper";
@@ -188,6 +189,44 @@ function createLocalPackageHoverContent(
 }
 
 /**
+ * Create hover content for version information
+ */
+function createVersionHoverContent(
+  packageName: string,
+  currentVersion: string,
+  latestVersion: string | null,
+  availableVersions: string[]
+): MarkupContent {
+  const lines: string[] = [];
+
+  lines.push(`**Version:** ${currentVersion}`);
+
+  if (latestVersion && latestVersion !== currentVersion) {
+    lines.push(`**Latest:** ${latestVersion} ⬆️`);
+  } else if (latestVersion) {
+    lines.push(`**Status:** Up to date ✓`);
+  }
+
+  if (availableVersions.length > 1) {
+    const recentVersions = availableVersions.slice(0, 5);
+    lines.push("");
+    lines.push("**Recent versions:**");
+    for (const v of recentVersions) {
+      const marker = v === currentVersion ? " ← current" : "";
+      lines.push(`- ${v}${marker}`);
+    }
+    if (availableVersions.length > 5) {
+      lines.push(`- ... (${availableVersions.length - 5} more)`);
+    }
+  }
+
+  return {
+    kind: MarkupKind.Markdown,
+    value: lines.join("\n"),
+  };
+}
+
+/**
  * Create hover content for a GitHub repository
  */
 function createGitHubHoverContent(info: GitHubRepoInfo): MarkupContent {
@@ -225,7 +264,6 @@ export async function getHover(
   registryClient: ProviderRegistryClient
 ): Promise<Hover | null> {
   const token = getTokenAtPosition(document, position);
-  console.error(`[hover] token=${token ? JSON.stringify({ type: token.type, value: token.value }) : 'null'}`);
   if (!token) {
     return null;
   }
@@ -276,13 +314,30 @@ export async function getHover(
 
       // Handle GitHub URLs
       const gitHubUrl = extractGitHubUrl(token.value);
-      console.error(`[hover:version] token.value=${token.value}, extracted=${gitHubUrl}`);
       if (gitHubUrl) {
         const repoInfo = await registryClient.getGitHubRepoInfo(gitHubUrl);
-        console.error(`[hover:version] repoInfo=${repoInfo ? 'found' : 'null'}`);
         if (repoInfo) {
           return {
             contents: createGitHubHoverContent(repoInfo),
+            range: token.range,
+          };
+        }
+      }
+
+      // Handle normal version strings - show version info
+      const text = document.getText();
+      const offset = document.offsetAt(token.range.start);
+      const packageName = getPackageNameForVersion(text, offset);
+      if (packageName) {
+        const versions = await registryClient.getVersions(packageName);
+        if (versions.length > 0) {
+          return {
+            contents: createVersionHoverContent(
+              packageName,
+              token.value,
+              versions[0],
+              versions
+            ),
             range: token.range,
           };
         }

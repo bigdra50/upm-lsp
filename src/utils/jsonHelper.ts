@@ -420,6 +420,21 @@ export function getVersionForPackage(text: string, packageName: string): string 
 }
 
 /**
+ * Get the package name for a version value position
+ * Looks backwards from the version position to find the key
+ */
+export function getPackageNameForVersion(text: string, versionOffset: number): string | null {
+  // Find the start of the current line or key-value pair
+  const beforeVersion = text.slice(0, versionOffset);
+
+  // Match the last "packageName": pattern before the version
+  const pattern = /"([^"]+)"\s*:\s*"?$/;
+  const match = beforeVersion.match(pattern);
+
+  return match ? match[1] : null;
+}
+
+/**
  * Check if value is a GitHub/Git URL
  */
 export function isGitHubUrl(value: string): boolean {
