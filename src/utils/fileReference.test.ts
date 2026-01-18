@@ -51,33 +51,43 @@ describe("isGitFileReference", () => {
 describe("parseFileReference", () => {
   it("should parse relative paths", () => {
     const result = parseFileReference("file:../my-package");
-    expect(result).not.toBeNull();
-    expect(result?.path).toBe("../my-package");
-    expect(result?.isAbsolute).toBe(false);
-    expect(result?.isTarball).toBe(false);
-    expect(result?.isGitProtocol).toBe(false);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.path).toBe("../my-package");
+      expect(result.value.isAbsolute).toBe(false);
+      expect(result.value.isTarball).toBe(false);
+      expect(result.value.isGitProtocol).toBe(false);
+    }
   });
 
   it("should parse absolute paths", () => {
     const result = parseFileReference("file:/absolute/path");
-    expect(result).not.toBeNull();
-    expect(result?.path).toBe("/absolute/path");
-    expect(result?.isAbsolute).toBe(true);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.path).toBe("/absolute/path");
+      expect(result.value.isAbsolute).toBe(true);
+    }
   });
 
   it("should detect tarballs", () => {
     const result = parseFileReference("file:../package.tgz");
-    expect(result?.isTarball).toBe(true);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.isTarball).toBe(true);
+    }
   });
 
   it("should detect Git-style file:// references", () => {
     const result = parseFileReference("file://localhost/path/repo.git");
-    expect(result?.isGitProtocol).toBe(true);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.isGitProtocol).toBe(true);
+    }
   });
 
-  it("should return null for non-file references", () => {
-    expect(parseFileReference("1.0.0")).toBeNull();
-    expect(parseFileReference("https://github.com")).toBeNull();
+  it("should return error for non-file references", () => {
+    expect(parseFileReference("1.0.0").ok).toBe(false);
+    expect(parseFileReference("https://github.com").ok).toBe(false);
   });
 });
 

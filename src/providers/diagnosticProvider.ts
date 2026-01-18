@@ -344,8 +344,8 @@ export async function getDiagnostics(
       }
 
       // 3. Parse and resolve path
-      const fileInfo = parseFileReference(dep.version.value);
-      if (!fileInfo || fileInfo.isGitProtocol) {
+      const fileInfoResult = parseFileReference(dep.version.value);
+      if (!fileInfoResult.ok || fileInfoResult.value.isGitProtocol) {
         // Git-style file:// references are handled differently
         continue;
       }

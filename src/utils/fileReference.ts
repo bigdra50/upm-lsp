@@ -14,6 +14,7 @@
  */
 
 import * as path from "path";
+import { Result, ok, err } from "./result";
 
 /**
  * File reference protocol prefix
@@ -30,78 +31,91 @@ export const FILE_GIT_PROTOCOL_PREFIX = "file://";
  */
 export interface FileReferenceInfo {
   /** Original reference string */
-  original: string;
+  readonly original: string;
   /** Path after removing file: prefix */
-  path: string;
+  readonly path: string;
   /** Whether it's an absolute path */
-  isAbsolute: boolean;
+  readonly isAbsolute: boolean;
   /** Whether it's a tarball (.tgz) */
-  isTarball: boolean;
+  readonly isTarball: boolean;
   /** Whether it's a Git-style file:// reference */
-  isGitProtocol: boolean;
+  readonly isGitProtocol: boolean;
 }
 
 /**
- * Validation result for file reference
+ * Parse error types
  */
-export interface FileReferenceValidation {
-  /** Whether the reference is valid */
-  valid: boolean;
-  /** Resolved absolute path (null if invalid) */
-  absolutePath: string | null;
-  /** Whether path exists */
-  exists: boolean;
-  /** Whether package.json exists (for directories) */
-  hasPackageJson: boolean;
-  /** Warning messages (not errors, just informational) */
-  warnings: string[];
-  /** Error message if invalid */
-  error: string | null;
-}
+export type ParseError =
+  | "not_file_ref"
+  | "empty_path"
+  | "invalid_chars"
+  | "too_long";
 
 /**
  * Check if a version string is a file: reference
  */
-export function isFileReference(version: string): boolean {
-  return version.startsWith(FILE_PROTOCOL_PREFIX);
-}
+export const isFileReference = (version: string): boolean =>
+  version.startsWith(FILE_PROTOCOL_PREFIX);
 
 /**
  * Check if a version string is a Git-style file:// reference
  */
-export function isGitFileReference(version: string): boolean {
-  return version.startsWith(FILE_GIT_PROTOCOL_PREFIX);
-}
+export const isGitFileReference = (version: string): boolean =>
+  version.startsWith(FILE_GIT_PROTOCOL_PREFIX);
 
 /**
- * Parse a file: reference string
+ * Parse a file: reference string (Result-based)
  */
-export function parseFileReference(reference: string): FileReferenceInfo | null {
+export const parseFileReference = (
+  reference: string
+): Result<FileReferenceInfo, ParseError> => {
   if (!isFileReference(reference)) {
-    return null;
+    return err("not_file_ref");
   }
 
   // Check for Git-style file:// first
   if (isGitFileReference(reference)) {
-    return {
+    return ok({
       original: reference,
       path: reference.slice(FILE_GIT_PROTOCOL_PREFIX.length),
       isAbsolute: true,
       isTarball: false,
       isGitProtocol: true,
-    };
+    });
   }
 
   const filePath = reference.slice(FILE_PROTOCOL_PREFIX.length);
 
-  return {
+  // Validate path
+  if (!filePath || filePath.trim() === "") {
+    return err("empty_path");
+  }
+  if (/[\x00-\x1f]/.test(filePath)) {
+    return err("invalid_chars");
+  }
+  if (filePath.length > 1024) {
+    return err("too_long");
+  }
+
+  return ok({
     original: reference,
     path: filePath,
     isAbsolute: path.isAbsolute(filePath),
     isTarball: filePath.endsWith(".tgz"),
     isGitProtocol: false,
-  };
-}
+  });
+};
+
+/**
+ * Parse file reference - returns null on error (legacy compatibility)
+ * @deprecated Use parseFileReference with Result type
+ */
+export const parseFileReferenceOrNull = (
+  reference: string
+): FileReferenceInfo | null => {
+  const result = parseFileReference(reference);
+  return result.ok ? result.value : null;
+};
 
 /**
  * Resolve file reference path to absolute path
@@ -110,21 +124,20 @@ export function parseFileReference(reference: string): FileReferenceInfo | null 
  * @param manifestDir - Directory containing manifest.json (Packages/)
  * @returns Resolved absolute path or null if invalid
  */
-export function resolveFileReference(
+export const resolveFileReference = (
   reference: string,
   manifestDir: string
-): string | null {
-  const info = parseFileReference(reference);
-  if (!info || info.isGitProtocol) {
+): string | null => {
+  const result = parseFileReference(reference);
+  if (!result.ok || result.value.isGitProtocol) {
     return null;
   }
 
-  if (info.isAbsolute) {
-    return path.normalize(info.path);
-  }
-
-  return path.resolve(manifestDir, info.path);
-}
+  const info = result.value;
+  return info.isAbsolute
+    ? path.normalize(info.path)
+    : path.resolve(manifestDir, info.path);
+};
 
 /**
  * Get relative path from manifest directory for display
@@ -134,10 +147,10 @@ export function resolveFileReference(
  * @param manifestDir - Directory containing manifest.json
  * @returns Relative path if possible, otherwise original path with home dir masked
  */
-export function getDisplayPath(
+export const getDisplayPath = (
   absolutePath: string,
   manifestDir: string
-): string {
+): string => {
   // Try to get relative path from manifest directory
   const relativePath = path.relative(manifestDir, absolutePath);
 
@@ -154,68 +167,48 @@ export function getDisplayPath(
   }
 
   return absolutePath;
-}
+};
 
 /**
  * Check for common issues in file reference
  * Returns warnings (not errors) for portability concerns
+ * Pure function - no mutation
  */
-export function checkFileReferenceWarnings(reference: string): string[] {
-  const warnings: string[] = [];
+export const checkFileReferenceWarnings = (reference: string): readonly string[] => {
+  const result = parseFileReference(reference);
+  const info = result.ok ? result.value : null;
 
-  // Check for backslashes (Windows paths should use forward slashes)
-  if (reference.includes("\\")) {
-    warnings.push("Use forward slashes (/) for better cross-platform portability");
-  }
-
-  // Check for spaces in path (might need quoting in some contexts)
-  const info = parseFileReference(reference);
-  if (info && info.path.includes(" ")) {
-    warnings.push("Path contains spaces - ensure proper handling in build systems");
-  }
-
-  return warnings;
-}
+  return [
+    ...(reference.includes("\\")
+      ? ["Use forward slashes (/) for better cross-platform portability"]
+      : []),
+    ...(info?.path.includes(" ")
+      ? ["Path contains spaces - ensure proper handling in build systems"]
+      : []),
+  ];
+};
 
 /**
- * Validate file reference path
+ * Validate file reference path format
  * Note: Does NOT perform filesystem access - just validates format
  */
-export function validateFileReferenceFormat(reference: string): {
-  valid: boolean;
-  error: string | null;
-} {
-  if (!isFileReference(reference)) {
-    return { valid: false, error: "Not a file: reference" };
-  }
+export const validateFileReferenceFormat = (
+  reference: string
+): { valid: boolean; error: string | null } => {
+  const result = parseFileReference(reference);
 
-  const info = parseFileReference(reference);
-  if (!info) {
-    return { valid: false, error: "Failed to parse file: reference" };
-  }
-
-  // Git-style file:// is valid but handled differently
-  if (info.isGitProtocol) {
-    return { valid: true, error: null };
-  }
-
-  // Check for empty path
-  if (!info.path || info.path.trim() === "") {
-    return { valid: false, error: "Empty path in file: reference" };
-  }
-
-  // Check for control characters
-  if (/[\x00-\x1f]/.test(info.path)) {
-    return { valid: false, error: "Path contains invalid control characters" };
-  }
-
-  // Check for excessively long paths
-  if (info.path.length > 1024) {
-    return { valid: false, error: "Path exceeds maximum length (1024 characters)" };
+  if (!result.ok) {
+    const errorMessages: Record<ParseError, string> = {
+      not_file_ref: "Not a file: reference",
+      empty_path: "Empty path in file: reference",
+      invalid_chars: "Path contains invalid control characters",
+      too_long: "Path exceeds maximum length (1024 characters)",
+    };
+    return { valid: false, error: errorMessages[result.error] };
   }
 
   return { valid: true, error: null };
-}
+};
 
 /**
  * Check if resolved path is within project boundaries
@@ -225,24 +218,36 @@ export function validateFileReferenceFormat(reference: string): {
  * @param manifestDir - Directory containing manifest.json
  * @returns Object with isWithinProject flag and message
  */
-export function checkProjectBoundary(
+export const checkProjectBoundary = (
   absolutePath: string,
   manifestDir: string
-): { isWithinProject: boolean; message: string | null } {
+): { isWithinProject: boolean; message: string | null } => {
   // Get project root (parent of Packages/)
   const projectRoot = path.dirname(manifestDir);
   const normalizedPath = path.normalize(absolutePath);
   const normalizedRoot = path.normalize(projectRoot);
 
-  const isWithinProject = normalizedPath.startsWith(normalizedRoot + path.sep) ||
+  const isWithinProject =
+    normalizedPath.startsWith(normalizedRoot + path.sep) ||
     normalizedPath === normalizedRoot;
 
-  if (!isWithinProject) {
-    return {
-      isWithinProject: false,
-      message: "Path references location outside project directory",
-    };
-  }
+  return isWithinProject
+    ? { isWithinProject: true, message: null }
+    : {
+        isWithinProject: false,
+        message: "Path references location outside project directory",
+      };
+};
 
-  return { isWithinProject: true, message: null };
-}
+/**
+ * Convert parse error to human-readable message
+ */
+export const parseErrorToMessage = (error: ParseError): string => {
+  const messages: Record<ParseError, string> = {
+    not_file_ref: "Not a file: reference",
+    empty_path: "Empty path in file: reference",
+    invalid_chars: "Path contains invalid control characters",
+    too_long: "Path exceeds maximum length (1024 characters)",
+  };
+  return messages[error];
+};

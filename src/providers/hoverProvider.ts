@@ -142,13 +142,13 @@ function createLocalPackageHoverContent(
   lines.push("");
 
   // Extract path from file: reference using utility
-  const fileInfo = parseFileReference(fileReference);
+  const fileInfoResult = parseFileReference(fileReference);
   const manifestDir = path.dirname(URI.parse(documentUri).fsPath);
-  const displayPath = fileInfo
+  const displayPath = fileInfoResult.ok
     ? getDisplayPath(
-        fileInfo.isAbsolute
-          ? fileInfo.path
-          : path.resolve(manifestDir, fileInfo.path),
+        fileInfoResult.value.isAbsolute
+          ? fileInfoResult.value.path
+          : path.resolve(manifestDir, fileInfoResult.value.path),
         manifestDir
       )
     : fileReference;

@@ -11,29 +11,38 @@ import {
 describe("parseFileReference", () => {
   it("should parse file: prefix and return FileReferenceInfo", () => {
     const result1 = parseFileReference("file:../my-package");
-    expect(result1).not.toBeNull();
-    expect(result1?.path).toBe("../my-package");
-    expect(result1?.isAbsolute).toBe(false);
+    expect(result1.ok).toBe(true);
+    if (result1.ok) {
+      expect(result1.value.path).toBe("../my-package");
+      expect(result1.value.isAbsolute).toBe(false);
+    }
 
     const result2 = parseFileReference("file:./local/pkg");
-    expect(result2).not.toBeNull();
-    expect(result2?.path).toBe("./local/pkg");
+    expect(result2.ok).toBe(true);
+    if (result2.ok) {
+      expect(result2.value.path).toBe("./local/pkg");
+    }
 
     const result3 = parseFileReference("file:/absolute/path");
-    expect(result3).not.toBeNull();
-    expect(result3?.path).toBe("/absolute/path");
-    expect(result3?.isAbsolute).toBe(true);
+    expect(result3.ok).toBe(true);
+    if (result3.ok) {
+      expect(result3.value.path).toBe("/absolute/path");
+      expect(result3.value.isAbsolute).toBe(true);
+    }
   });
 
-  it("should return null for non-file references", () => {
-    expect(parseFileReference("1.0.0")).toBeNull();
-    expect(parseFileReference("https://github.com/owner/repo.git")).toBeNull();
-    expect(parseFileReference("git+https://github.com/owner/repo.git")).toBeNull();
+  it("should return error for non-file references", () => {
+    expect(parseFileReference("1.0.0").ok).toBe(false);
+    expect(parseFileReference("https://github.com/owner/repo.git").ok).toBe(false);
+    expect(parseFileReference("git+https://github.com/owner/repo.git").ok).toBe(false);
   });
 
   it("should detect tarballs", () => {
     const result = parseFileReference("file:../package.tgz");
-    expect(result?.isTarball).toBe(true);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.isTarball).toBe(true);
+    }
   });
 });
 
