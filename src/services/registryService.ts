@@ -294,21 +294,37 @@ export class RegistryService {
 
       getGitHubRepoInfo: async (url: string): Promise<GitHubRepoInfo | null> => {
         try {
-          const info = await this.clients.github.getPackageInfo(url);
-          if (!info) return null;
-
           const match = url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
           if (!match) return null;
 
           const [, owner, repo] = match;
+
+          // Fetch repo info from GitHub API directly (not package.json)
+          const apiUrl = `https://api.github.com/repos/${owner}/${repo}`;
+          const response = await fetch(apiUrl, {
+            headers: {
+              Accept: "application/vnd.github.v3+json",
+              "User-Agent": "upm-lsp",
+            },
+          });
+
+          if (!response.ok) return null;
+
+          const repoData = await response.json() as {
+            full_name: string;
+            description: string | null;
+            stargazers_count: number;
+            html_url: string;
+          };
+
           const tags = await this.clients.github.getTags(owner, repo).catch(() => []);
 
           return {
-            fullName: `${owner}/${repo}`,
-            description: info.description || null,
-            stargazersCount: 0,
+            fullName: repoData.full_name,
+            description: repoData.description,
+            stargazersCount: repoData.stargazers_count,
             latestTag: tags[0] || null,
-            htmlUrl: `https://github.com/${owner}/${repo}`,
+            htmlUrl: repoData.html_url,
           };
         } catch {
           return null;
