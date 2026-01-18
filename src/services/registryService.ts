@@ -15,6 +15,7 @@ import {
   OpenUpmRegistryClient,
   GitHubRegistryClient,
   UnityEditorRegistryClient,
+  LocalPackageRegistryClient,
   RegistryClient,
   Cache,
 } from "../registries";
@@ -45,6 +46,7 @@ export interface RegistryClients {
   openUpm: RegistryClient;
   github: GitHubRegistryClient;
   editor: UnityEditorRegistryClient;
+  local: LocalPackageRegistryClient;
 }
 
 /**
@@ -63,6 +65,7 @@ export function createDefaultRegistryClients(): RegistryClients {
     openUpm: new OpenUpmRegistryClient(),
     github: new GitHubRegistryClient(),
     editor: new UnityEditorRegistryClient(),
+    local: new LocalPackageRegistryClient(),
   };
 }
 
@@ -102,6 +105,20 @@ export class RegistryService {
    */
   get editorRegistry(): UnityEditorRegistryClient {
     return this.clients.editor;
+  }
+
+  /**
+   * Get Local Package registry client
+   */
+  get localRegistry(): LocalPackageRegistryClient {
+    return this.clients.local;
+  }
+
+  /**
+   * Set manifest directory for resolving relative file: paths
+   */
+  setManifestDir(dir: string): void {
+    this.clients.local.setManifestDir(dir);
   }
 
   /**
@@ -208,6 +225,11 @@ export class RegistryService {
     const getPackageInfoInternal = async (
       packageName: string
     ): Promise<PackageInfo | null> => {
+      // For file: references, use local registry
+      if (packageName.startsWith("file:")) {
+        return this.clients.local.getPackageInfo(packageName).catch(() => null);
+      }
+
       // For com.unity.* packages, try local Unity Editor first (more accurate)
       if (packageName.startsWith("com.unity.")) {
         const editorInfo = await this.clients.editor
@@ -228,6 +250,11 @@ export class RegistryService {
       getPackageInfo: getPackageInfoInternal,
 
       packageExists: async (packageName: string): Promise<boolean> => {
+        // For file: references, use local registry
+        if (packageName.startsWith("file:")) {
+          return this.clients.local.packageExists(packageName).catch(() => false);
+        }
+
         // For com.unity.* packages, check local Unity Editor first
         if (packageName.startsWith("com.unity.")) {
           const editorExists = await this.clients.editor
@@ -244,6 +271,11 @@ export class RegistryService {
         packageName: string,
         version: string
       ): Promise<boolean> => {
+        // For file: references, use local registry
+        if (packageName.startsWith("file:")) {
+          return this.clients.local.versionExists(packageName, version).catch(() => false);
+        }
+
         // For com.unity.* packages, check local Unity Editor first
         if (packageName.startsWith("com.unity.")) {
           const editorVersionExists = await this.clients.editor
@@ -296,6 +328,7 @@ export class RegistryService {
     this.clients.openUpm.clearCache();
     this.clients.github.clearCache();
     this.clients.editor.clearCache();
+    this.clients.local.clearCache();
   }
 
   /**

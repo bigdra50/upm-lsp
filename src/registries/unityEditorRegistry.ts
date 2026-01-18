@@ -11,6 +11,7 @@ import * as os from "os";
 
 import { PackageInfo } from "../types";
 import { RegistryClient, Cache } from "./registryClient";
+import { readPackageJson } from "../utils/packageJson";
 
 /**
  * Unity Editor installation info
@@ -170,41 +171,6 @@ export class UnityEditorRegistryClient implements RegistryClient {
   }
 
   /**
-   * Read package.json from a built-in package directory
-   */
-  private async readPackageJson(packageDir: string): Promise<PackageInfo | null> {
-    const packageJsonPath = path.join(packageDir, "package.json");
-
-    try {
-      await fs.access(packageJsonPath);
-    } catch {
-      return null;
-    }
-
-    try {
-      const content = await fs.readFile(packageJsonPath, "utf-8");
-      const json = JSON.parse(content);
-
-      return {
-        name: json.name,
-        version: json.version,
-        displayName: json.displayName,
-        description: json.description,
-        unity: json.unity,
-        unityRelease: json.unityRelease,
-        dependencies: json.dependencies,
-        keywords: json.keywords,
-        author: json.author,
-        documentationUrl: json.documentationUrl,
-        changelogUrl: json.changelogUrl,
-        licensesUrl: json.licensesUrl,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
    * Get all built-in packages from a specific Unity Editor version
    */
   private async getPackagesFromEditor(
@@ -227,7 +193,7 @@ export class UnityEditorRegistryClient implements RegistryClient {
         if (!entry.name.startsWith("com.unity.")) continue;
 
         const packageDir = path.join(builtInPath, entry.name);
-        const packageInfo = await this.readPackageJson(packageDir);
+        const packageInfo = await readPackageJson(packageDir);
 
         if (packageInfo) {
           packages.set(packageInfo.name, packageInfo);
@@ -295,7 +261,7 @@ export class UnityEditorRegistryClient implements RegistryClient {
         return null;
       }
 
-      const info = await this.readPackageJson(packageDir);
+      const info = await readPackageJson(packageDir);
       if (info) {
         this.packageCache.set(packageName, info);
         return info;
@@ -327,7 +293,7 @@ export class UnityEditorRegistryClient implements RegistryClient {
         continue;
       }
 
-      const info = await this.readPackageJson(packageDir);
+      const info = await readPackageJson(packageDir);
       if (info && info.version) {
         versions.add(info.version);
       }

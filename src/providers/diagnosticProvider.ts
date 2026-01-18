@@ -3,6 +3,8 @@
  * Validates JSON syntax, package names, versions, and scoped registries
  */
 
+import * as path from "path";
+
 import {
   Diagnostic,
   DiagnosticSeverity,
@@ -19,6 +21,16 @@ import {
   findScopedRegistriesBoundaries,
   parseJsonErrorPosition,
 } from "../utils/jsonHelper";
+import {
+  isFileReference,
+  parseFileReference,
+  resolveFileReference,
+  validateFileReferenceFormat,
+  checkFileReferenceWarnings,
+  getDisplayPath,
+  checkProjectBoundary,
+} from "../utils/fileReference";
+import { LocalPackageRegistryClient } from "../registries/localPackageRegistry";
 
 const DIAGNOSTIC_SOURCE = "upm-lsp";
 
@@ -270,6 +282,17 @@ export async function getDiagnostics(
   const diagnostics: Diagnostic[] = [];
   const text = document.getText();
 
+  // Get manifest directory for resolving file: references
+  const documentUri = document.uri;
+  const manifestPath = documentUri.startsWith("file://")
+    ? documentUri.slice(7)
+    : documentUri;
+  const manifestDir = path.dirname(manifestPath);
+
+  // Initialize local package registry for file: reference validation
+  const localRegistry = new LocalPackageRegistryClient();
+  localRegistry.setManifestDir(manifestDir);
+
   const lineIndex = new LineIndex(text);
 
   // 1. Check JSON syntax
@@ -295,8 +318,79 @@ export async function getDiagnostics(
       continue;
     }
 
+    // Validate file: references (local filesystem, no network needed)
+    if (isFileReference(dep.version.value)) {
+      // 1. Format validation
+      const formatValidation = validateFileReferenceFormat(dep.version.value);
+      if (!formatValidation.valid) {
+        diagnostics.push({
+          severity: DiagnosticSeverity.Error,
+          range: dep.version.range,
+          message: formatValidation.error ?? "Invalid file: reference format",
+          source: DIAGNOSTIC_SOURCE,
+        });
+        continue;
+      }
+
+      // 2. Check for warnings (backslash, spaces, etc.)
+      const warnings = checkFileReferenceWarnings(dep.version.value);
+      for (const warning of warnings) {
+        diagnostics.push({
+          severity: DiagnosticSeverity.Warning,
+          range: dep.version.range,
+          message: warning,
+          source: DIAGNOSTIC_SOURCE,
+        });
+      }
+
+      // 3. Parse and resolve path
+      const fileInfo = parseFileReference(dep.version.value);
+      if (!fileInfo || fileInfo.isGitProtocol) {
+        // Git-style file:// references are handled differently
+        continue;
+      }
+
+      const absolutePath = resolveFileReference(dep.version.value, manifestDir);
+      if (!absolutePath) {
+        continue;
+      }
+
+      // 4. Check project boundary (Info level, not error)
+      const boundaryCheck = checkProjectBoundary(absolutePath, manifestDir);
+      if (!boundaryCheck.isWithinProject) {
+        const displayPath = getDisplayPath(absolutePath, manifestDir);
+        diagnostics.push({
+          severity: DiagnosticSeverity.Information,
+          range: dep.version.range,
+          message: `${boundaryCheck.message}: ${displayPath}`,
+          source: DIAGNOSTIC_SOURCE,
+        });
+      }
+
+      // 5. Use LocalPackageRegistryClient for filesystem validation
+      const resolved = await localRegistry.resolveReference(dep.version.value);
+      const displayPath = getDisplayPath(resolved.absolutePath, manifestDir);
+
+      if (!resolved.exists) {
+        diagnostics.push({
+          severity: DiagnosticSeverity.Warning,
+          range: dep.version.range,
+          message: `Local package path not found: ${displayPath}`,
+          source: DIAGNOSTIC_SOURCE,
+        });
+      } else if (!resolved.packageInfo) {
+        diagnostics.push({
+          severity: DiagnosticSeverity.Warning,
+          range: dep.version.range,
+          message: `package.json not found in: ${displayPath}`,
+          source: DIAGNOSTIC_SOURCE,
+        });
+      }
+      continue;
+    }
+
+    // Skip git/http references (no validation)
     if (
-      dep.version.value.startsWith("file:") ||
       dep.version.value.startsWith("git") ||
       dep.version.value.startsWith("http")
     ) {

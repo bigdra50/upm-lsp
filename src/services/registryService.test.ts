@@ -8,6 +8,7 @@ import { PackageInfo } from "../types";
 import { RegistryClient, Cache } from "../registries/registryClient";
 import { GitHubRegistryClient } from "../registries/githubRegistry";
 import { UnityEditorRegistryClient } from "../registries/unityEditorRegistry";
+import { LocalPackageRegistryClient } from "../registries/localPackageRegistry";
 
 /**
  * Create a mock registry client for testing
@@ -71,11 +72,39 @@ function createMockEditorClient(): UnityEditorRegistryClient {
   return client;
 }
 
+/**
+ * Create mock Local Package registry client
+ */
+function createMockLocalClient(): LocalPackageRegistryClient {
+  const client = {
+    name: "local",
+    searchPackages: vi.fn(async () => []),
+    getPackageInfo: vi.fn(async () => null),
+    getVersions: vi.fn(async () => []),
+    versionExists: vi.fn(async () => false),
+    packageExists: vi.fn(async () => false),
+    setManifestDir: vi.fn(),
+    getManifestDir: vi.fn(() => null),
+    resolveReference: vi.fn(async () => ({
+      reference: "",
+      absolutePath: "",
+      exists: false,
+      packageInfo: null,
+    })),
+    listDirectories: vi.fn(async () => []),
+    hasPackageJson: vi.fn(async () => false),
+    clearCache: vi.fn(),
+  } as unknown as LocalPackageRegistryClient;
+
+  return client;
+}
+
 describe("RegistryService", () => {
   let unityClient: RegistryClient;
   let openUpmClient: RegistryClient;
   let githubClient: GitHubRegistryClient;
   let editorClient: UnityEditorRegistryClient;
+  let localClient: LocalPackageRegistryClient;
   let clients: RegistryClients;
 
   beforeEach(() => {
@@ -90,12 +119,14 @@ describe("RegistryService", () => {
 
     githubClient = createMockGitHubClient();
     editorClient = createMockEditorClient();
+    localClient = createMockLocalClient();
 
     clients = {
       unity: unityClient,
       openUpm: openUpmClient,
       github: githubClient,
       editor: editorClient,
+      local: localClient,
     };
   });
 
@@ -147,6 +178,7 @@ describe("RegistryService", () => {
         openUpm: openUpmClient,
         github: githubClient,
         editor: editorClient,
+        local: localClient,
       });
 
       const packages = await service.getAllPackages();
@@ -177,6 +209,7 @@ describe("RegistryService", () => {
         openUpm: openUpmClient,
         github: githubClient,
         editor: editorClient,
+        local: localClient,
       });
 
       const packages = await service.getAllPackages();
@@ -206,6 +239,7 @@ describe("RegistryService", () => {
         openUpm: openUpmClient,
         github: githubClient,
         editor: editorClient,
+        local: localClient,
       });
 
       const versions = await service.getVersions("com.cysharp.unitask");
@@ -282,6 +316,7 @@ describe("RegistryService", () => {
         openUpm: openUpmClient,
         github: githubClient,
         editor: editorClient,
+        local: localClient,
       });
       const client = service.createProviderRegistryClient();
 
@@ -320,6 +355,7 @@ describe("RegistryService", () => {
       expect(openUpmClient.clearCache).toHaveBeenCalled();
       expect(githubClient.clearCache).toHaveBeenCalled();
       expect(editorClient.clearCache).toHaveBeenCalled();
+      expect(localClient.clearCache).toHaveBeenCalled();
     });
   });
 
@@ -328,6 +364,24 @@ describe("RegistryService", () => {
       const service = new RegistryService(clients);
 
       expect(service.editorRegistry).toBe(editorClient);
+    });
+  });
+
+  describe("localRegistry", () => {
+    it("returns local registry client", () => {
+      const service = new RegistryService(clients);
+
+      expect(service.localRegistry).toBe(localClient);
+    });
+  });
+
+  describe("setManifestDir", () => {
+    it("sets manifest directory on local client", () => {
+      const service = new RegistryService(clients);
+
+      service.setManifestDir("/path/to/manifest");
+
+      expect(localClient.setManifestDir).toHaveBeenCalledWith("/path/to/manifest");
     });
   });
 
