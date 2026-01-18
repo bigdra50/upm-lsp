@@ -253,11 +253,19 @@ function findScopedRegistries(
 }
 
 /**
+ * Diagnostic options
+ */
+interface DiagnosticOptions {
+  networkValidation: boolean;
+}
+
+/**
  * Get diagnostics for a document
  */
 export async function getDiagnostics(
   document: TextDocument,
-  registryClient: ProviderRegistryClient
+  registryClient: ProviderRegistryClient,
+  options: DiagnosticOptions = { networkValidation: true }
 ): Promise<Diagnostic[]> {
   const diagnostics: Diagnostic[] = [];
   const text = document.getText();
@@ -292,6 +300,11 @@ export async function getDiagnostics(
       dep.version.value.startsWith("git") ||
       dep.version.value.startsWith("http")
     ) {
+      continue;
+    }
+
+    // Skip network validation if disabled
+    if (!options.networkValidation) {
       continue;
     }
 

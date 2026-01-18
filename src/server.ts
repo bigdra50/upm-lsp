@@ -18,7 +18,7 @@ import {
 
 import { TextDocument } from "vscode-languageserver-textdocument";
 
-import { ProviderRegistryClient, GitHubRepoInfo, PackageInfo } from "./types";
+import { ProviderRegistryClient, GitHubRepoInfo, PackageInfo, LspSettings } from "./types";
 import { getCompletionsAsync, getHover, getDiagnostics, PackageSearchProvider } from "./providers";
 import {
   UnityRegistryClient,
@@ -210,7 +210,21 @@ const providerRegistry = createProviderRegistryClient();
 let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
 
+// LSP settings from initializationOptions
+let lspSettings: LspSettings = {
+  networkValidation: true, // default: enabled
+};
+
 connection.onInitialize((params: InitializeParams): InitializeResult => {
+  // Parse initializationOptions
+  const initOptions = params.initializationOptions as LspSettings | undefined;
+  if (initOptions) {
+    if (typeof initOptions.networkValidation === "boolean") {
+      lspSettings.networkValidation = initOptions.networkValidation;
+    }
+  }
+  connection.console.log(`Network validation: ${lspSettings.networkValidation ? "enabled" : "disabled"}`);
+
   const capabilities = params.capabilities;
 
   hasConfigurationCapability = !!(
@@ -278,7 +292,9 @@ function isManifestFile(uri: string): boolean {
  * Validate document and send diagnostics
  */
 async function validateDocument(document: TextDocument): Promise<void> {
-  const diagnostics = await getDiagnostics(document, providerRegistry);
+  const diagnostics = await getDiagnostics(document, providerRegistry, {
+    networkValidation: lspSettings.networkValidation ?? true,
+  });
   connection.sendDiagnostics({ uri: document.uri, diagnostics });
 }
 

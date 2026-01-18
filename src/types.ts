@@ -101,6 +101,14 @@ export interface GitHubRepoInfo {
 }
 
 /**
+ * LSP initialization settings
+ */
+export interface LspSettings {
+  /** Enable network validation for package/version existence (default: true) */
+  networkValidation?: boolean;
+}
+
+/**
  * Registry client interface for providers (hover, diagnostics)
  * This is a higher-level interface that wraps the base RegistryClient
  */
