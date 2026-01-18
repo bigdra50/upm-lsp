@@ -18,15 +18,9 @@ import {
 
 import { TextDocument } from "vscode-languageserver-textdocument";
 
-import { ProviderRegistryClient, GitHubRepoInfo, PackageInfo, LspSettings } from "./types";
-import { getCompletionsAsync, getHover, getDiagnostics, PackageSearchProvider } from "./providers";
-import {
-  UnityRegistryClient,
-  OpenUpmRegistryClient,
-  GitHubRegistryClient,
-  UnityEditorRegistryClient,
-  Cache,
-} from "./registries";
+import { LspSettings } from "./types";
+import { getCompletionsAsync, getHover, getDiagnostics } from "./providers";
+import { RegistryService, Logger } from "./services";
 
 // Create LSP connection via stdio
 const connection = createConnection(ProposedFeatures.all);
@@ -34,179 +28,19 @@ const connection = createConnection(ProposedFeatures.all);
 // Document manager
 const documents = new TextDocuments<TextDocument>(TextDocument);
 
-// Registry clients
-const unityRegistry = new UnityRegistryClient();
-const openUpmRegistry = new OpenUpmRegistryClient();
-const githubRegistry = new GitHubRegistryClient();
-const unityEditorRegistry = new UnityEditorRegistryClient();
+// Logger adapter for RegistryService
+const connectionLogger: Logger = {
+  log: (message: string) => connection.console.log(message),
+};
 
-// Cache for versions (to avoid repeated lookups)
-// TTL: 5 minutes, max 500 entries (one entry per package)
-const versionsCache = new Cache<string[]>({ ttlMs: 5 * 60 * 1000, maxEntries: 500 });
+// Registry service (orchestrates registry clients and caching)
+const registryService = new RegistryService(undefined, undefined, connectionLogger);
+const packageSearchProvider = registryService.createPackageSearchProvider();
+const providerRegistry = registryService.createProviderRegistryClient();
 
 // Debounce state for diagnostics validation
 const pendingValidations = new Map<string, { version: number; timer: ReturnType<typeof setTimeout> }>();
 const VALIDATION_DEBOUNCE_MS = 400;
-
-// Cache for package list (expensive to fetch)
-let packageListCache: PackageInfo[] | null = null;
-let packageListCacheTime = 0;
-const PACKAGE_LIST_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
-
-/**
- * Get all packages from registries (with caching)
- */
-async function getAllPackages(): Promise<PackageInfo[]> {
-  const now = Date.now();
-  if (packageListCache && now - packageListCacheTime < PACKAGE_LIST_CACHE_TTL) {
-    return packageListCache;
-  }
-
-  connection.console.log("Fetching package list from registries...");
-
-  const [unityPackages, openUpmPackages] = await Promise.all([
-    unityRegistry.searchPackages("").catch(() => []),
-    openUpmRegistry.searchPackages("").catch(() => []),
-  ]);
-
-  // Merge and dedupe (Unity takes precedence)
-  const packageMap = new Map<string, PackageInfo>();
-  for (const pkg of [...openUpmPackages, ...unityPackages]) {
-    packageMap.set(pkg.name, pkg);
-  }
-
-  packageListCache = Array.from(packageMap.values());
-  packageListCacheTime = now;
-
-  connection.console.log(`Cached ${packageListCache.length} packages`);
-  return packageListCache;
-}
-
-/**
- * Create a PackageSearchProvider for completion
- */
-function createPackageSearchProvider(): PackageSearchProvider {
-  return {
-    async searchPackages(query: string): Promise<PackageInfo[]> {
-      const allPackages = await getAllPackages();
-
-      if (!query) {
-        // Return popular Unity packages as default
-        return allPackages
-          .filter(pkg => pkg.name.startsWith("com.unity."))
-          .slice(0, 50);
-      }
-
-      // Filter by query
-      const lowerQuery = query.toLowerCase();
-      return allPackages
-        .filter(pkg =>
-          pkg.name.toLowerCase().includes(lowerQuery) ||
-          (pkg.displayName && pkg.displayName.toLowerCase().includes(lowerQuery))
-        )
-        .slice(0, 50);
-    },
-
-    async getVersions(packageName: string): Promise<string[]> {
-      // Check cache first
-      let versions = versionsCache.get(packageName);
-      if (versions) {
-        return versions;
-      }
-
-      // For com.unity.* packages, try local Unity Editor first (has accurate versions)
-      if (packageName.startsWith("com.unity.")) {
-        versions = await unityEditorRegistry.getVersions(packageName).catch(() => []);
-        if (versions.length > 0) {
-          versionsCache.set(packageName, versions);
-          return versions;
-        }
-      }
-
-      // Try Unity registry, then OpenUPM
-      versions = await unityRegistry.getVersions(packageName).catch(() => []);
-      if (versions.length === 0) {
-        versions = await openUpmRegistry.getVersions(packageName).catch(() => []);
-      }
-
-      versionsCache.set(packageName, versions);
-      return versions;
-    },
-  };
-}
-
-const packageSearchProvider = createPackageSearchProvider();
-
-/**
- * Create a ProviderRegistryClient adapter that wraps the base registry clients
- */
-function createProviderRegistryClient(): ProviderRegistryClient {
-  return {
-    async getPackageInfo(packageName: string) {
-      // For com.unity.* packages, try local Unity Editor first (more accurate)
-      if (packageName.startsWith("com.unity.")) {
-        const editorInfo = await unityEditorRegistry.getPackageInfo(packageName).catch(() => null);
-        if (editorInfo) return editorInfo;
-      }
-
-      // Try Unity registry, then OpenUPM
-      const unityInfo = await unityRegistry.getPackageInfo(packageName).catch(() => null);
-      if (unityInfo) return unityInfo;
-      return openUpmRegistry.getPackageInfo(packageName).catch(() => null);
-    },
-
-    async packageExists(packageName: string) {
-      // For com.unity.* packages, check local Unity Editor first
-      if (packageName.startsWith("com.unity.")) {
-        const editorExists = await unityEditorRegistry.packageExists(packageName).catch(() => false);
-        if (editorExists) return true;
-      }
-
-      const info = await this.getPackageInfo(packageName);
-      return info !== null;
-    },
-
-    async versionExists(packageName: string, version: string) {
-      // For com.unity.* packages, check local Unity Editor first
-      if (packageName.startsWith("com.unity.")) {
-        const editorVersionExists = await unityEditorRegistry.versionExists(packageName, version).catch(() => false);
-        if (editorVersionExists) return true;
-      }
-
-      const versions = await packageSearchProvider.getVersions(packageName);
-      return versions.includes(version);
-    },
-
-    async getDeprecationInfo(_packageName: string) {
-      return null;
-    },
-
-    async getGitHubRepoInfo(url: string): Promise<GitHubRepoInfo | null> {
-      try {
-        const info = await githubRegistry.getPackageInfo(url);
-        if (!info) return null;
-
-        const match = url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
-        if (!match) return null;
-
-        const [, owner, repo] = match;
-        const tags = await githubRegistry.getTags(owner, repo).catch(() => []);
-
-        return {
-          fullName: `${owner}/${repo}`,
-          description: info.description || null,
-          stargazersCount: 0,
-          latestTag: tags[0] || null,
-          htmlUrl: `https://github.com/${owner}/${repo}`,
-        };
-      } catch {
-        return null;
-      }
-    },
-  };
-}
-
-const providerRegistry = createProviderRegistryClient();
 
 // Configuration
 let hasConfigurationCapability = false;
@@ -269,7 +103,7 @@ connection.onInitialized(() => {
   connection.console.log("UPM Language Server ready");
 
   // Log detected Unity Editor installations
-  unityEditorRegistry.getInstalledEditors().then((editors) => {
+  registryService.editorRegistry.getInstalledEditors().then((editors) => {
     if (editors.length > 0) {
       connection.console.log(`Found ${editors.length} Unity Editor installation(s):`);
       for (const editor of editors) {
@@ -281,7 +115,7 @@ connection.onInitialized(() => {
   }).catch(() => {});
 
   // Pre-fetch package list in background
-  getAllPackages().catch(() => {});
+  registryService.prefetchPackages();
 });
 
 /**
