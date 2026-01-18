@@ -45,6 +45,8 @@ Supported paths:
 
 ## Installation
 
+### From source (recommended)
+
 ```bash
 git clone https://github.com/bigdra50/upm-lsp.git
 cd upm-lsp
@@ -52,6 +54,10 @@ npm install
 npm run build
 npm link  # makes 'upm-lsp' command available globally
 ```
+
+### Without local installation
+
+You can run directly from GitHub using `npx` (see Editor Setup below).
 
 ## Editor Setup
 
@@ -75,7 +81,10 @@ local configs = require("lspconfig.configs")
 if not configs.upm_lsp then
   configs.upm_lsp = {
     default_config = {
+      -- Option 1: If installed via npm link
       cmd = { "upm-lsp", "--stdio" },
+      -- Option 2: Run directly from GitHub (slower startup, no local install needed)
+      -- cmd = { "npx", "github:bigdra50/upm-lsp", "--stdio" },
       filetypes = { "json", "json.upm" },
       root_dir = lspconfig.util.root_pattern("Packages/manifest.json", "Assets"),
       single_file_support = true,
