@@ -19,6 +19,49 @@ import { ProviderRegistryClient } from "../types";
 const DIAGNOSTIC_SOURCE = "upm-lsp";
 
 /**
+ * Pre-computed line index for O(log n) offset-to-position conversion
+ * Replaces O(n) scanning with binary search
+ */
+class LineIndex {
+  /** Array of byte offsets where each line starts */
+  private readonly lineStarts: number[];
+
+  constructor(text: string) {
+    this.lineStarts = [0];
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) === 10) { // '\n'
+        this.lineStarts.push(i + 1);
+      }
+    }
+  }
+
+  /**
+   * Convert offset to Position using binary search
+   * @param offset - Character offset
+   * @returns Position (line, character)
+   */
+  positionAt(offset: number): Position {
+    // Binary search for the line containing offset
+    let low = 0;
+    let high = this.lineStarts.length - 1;
+
+    while (low < high) {
+      const mid = (low + high + 1) >> 1;
+      if (this.lineStarts[mid] <= offset) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    return {
+      line: low,
+      character: offset - this.lineStarts[low],
+    };
+  }
+}
+
+/**
  * Token location information
  */
 interface TokenLocation {
@@ -57,17 +100,17 @@ interface ScopedRegistryEntry {
 /**
  * Find the position of a JSON parse error from the error message
  *
- * @param text - Document text
+ * @param lineIndex - Pre-computed line index
  * @param errorMessage - JSON parse error message
  * @returns Position of the error
  */
-function findJsonErrorPosition(text: string, errorMessage: string): Position {
+function findJsonErrorPosition(lineIndex: LineIndex, errorMessage: string): Position {
   // Try to extract position from error message
   // Node.js format: "at position N" or "in JSON at position N"
   const positionMatch = errorMessage.match(/position\s+(\d+)/i);
   if (positionMatch) {
     const offset = parseInt(positionMatch[1], 10);
-    return offsetToPosition(text, offset);
+    return lineIndex.positionAt(offset);
   }
 
   // Try line/column format: "line N column M"
@@ -84,35 +127,13 @@ function findJsonErrorPosition(text: string, errorMessage: string): Position {
 }
 
 /**
- * Convert offset to Position
- *
- * @param text - Document text
- * @param offset - Character offset
- * @returns Position
- */
-function offsetToPosition(text: string, offset: number): Position {
-  let line = 0;
-  let character = 0;
-
-  for (let i = 0; i < offset && i < text.length; i++) {
-    if (text[i] === "\n") {
-      line++;
-      character = 0;
-    } else {
-      character++;
-    }
-  }
-
-  return { line, character };
-}
-
-/**
  * Find all string tokens in the document with their positions
  *
  * @param text - Document text
+ * @param lineIndex - Pre-computed line index
  * @returns Map of string values to their locations
  */
-function findStringTokens(text: string): Map<number, TokenLocation> {
+function findStringTokens(text: string, lineIndex: LineIndex): Map<number, TokenLocation> {
   const tokens = new Map<number, TokenLocation>();
   const stringPattern = /"([^"\\]|\\.)*"/g;
   let match: RegExpExecArray | null;
@@ -120,8 +141,8 @@ function findStringTokens(text: string): Map<number, TokenLocation> {
   while ((match = stringPattern.exec(text)) !== null) {
     const start = match.index;
     const value = match[0].slice(1, -1); // Remove quotes
-    const startPos = offsetToPosition(text, start);
-    const endPos = offsetToPosition(text, start + match[0].length);
+    const startPos = lineIndex.positionAt(start);
+    const endPos = lineIndex.positionAt(start + match[0].length);
 
     tokens.set(start, {
       value,
@@ -199,11 +220,13 @@ function findDependencies(
  *
  * @param text - Document text
  * @param tokens - Pre-computed string tokens
+ * @param lineIndex - Pre-computed line index
  * @returns Array of scoped registry entries
  */
 function findScopedRegistries(
   text: string,
-  tokens: Map<number, TokenLocation>
+  tokens: Map<number, TokenLocation>,
+  lineIndex: LineIndex
 ): ScopedRegistryEntry[] {
   const registries: ScopedRegistryEntry[] = [];
 
@@ -245,7 +268,8 @@ function findScopedRegistries(
           objectText,
           objectStart,
           objectEnd,
-          tokens
+          tokens,
+          lineIndex
         );
         registries.push(registry);
         objectStart = -1;
@@ -266,6 +290,7 @@ function findScopedRegistries(
  * @param objectStart - Start offset of the object
  * @param objectEnd - End offset of the object
  * @param tokens - Pre-computed string tokens
+ * @param lineIndex - Pre-computed line index
  * @returns Parsed scoped registry entry
  */
 function parseRegistryObject(
@@ -273,10 +298,11 @@ function parseRegistryObject(
   objectText: string,
   objectStart: number,
   objectEnd: number,
-  tokens: Map<number, TokenLocation>
+  tokens: Map<number, TokenLocation>,
+  lineIndex: LineIndex
 ): ScopedRegistryEntry {
-  const startPos = offsetToPosition(fullText, objectStart);
-  const endPos = offsetToPosition(fullText, objectEnd);
+  const startPos = lineIndex.positionAt(objectStart);
+  const endPos = lineIndex.positionAt(objectEnd);
 
   const registry: ScopedRegistryEntry = {
     scopes: [],
@@ -321,8 +347,8 @@ function parseRegistryObject(
     }
 
     registry.scopesRange = {
-      start: offsetToPosition(fullText, scopesStart),
-      end: offsetToPosition(fullText, scopesArrayEnd + 1),
+      start: lineIndex.positionAt(scopesStart),
+      end: lineIndex.positionAt(scopesArrayEnd + 1),
     };
 
     // Find individual scope strings
@@ -346,9 +372,10 @@ function parseRegistryObject(
  * Validate JSON syntax and return parse error diagnostic if any
  *
  * @param document - Text document
+ * @param lineIndex - Pre-computed line index
  * @returns JSON parse error diagnostic or null
  */
-function validateJsonSyntax(document: TextDocument): Diagnostic | null {
+function validateJsonSyntax(document: TextDocument, lineIndex: LineIndex): Diagnostic | null {
   const text = document.getText();
 
   try {
@@ -356,7 +383,7 @@ function validateJsonSyntax(document: TextDocument): Diagnostic | null {
     return null;
   } catch (e) {
     const errorMessage = e instanceof Error ? e.message : String(e);
-    const errorPos = findJsonErrorPosition(text, errorMessage);
+    const errorPos = findJsonErrorPosition(lineIndex, errorMessage);
 
     return {
       severity: DiagnosticSeverity.Error,
@@ -409,8 +436,11 @@ export async function getDiagnostics(
   const diagnostics: Diagnostic[] = [];
   const text = document.getText();
 
+  // Pre-compute line index for O(log n) position lookups
+  const lineIndex = new LineIndex(text);
+
   // 1. Check JSON syntax
-  const syntaxError = validateJsonSyntax(document);
+  const syntaxError = validateJsonSyntax(document, lineIndex);
   if (syntaxError) {
     diagnostics.push(syntaxError);
     // Don't continue if JSON is invalid
@@ -418,7 +448,7 @@ export async function getDiagnostics(
   }
 
   // Pre-compute string tokens
-  const tokens = findStringTokens(text);
+  const tokens = findStringTokens(text, lineIndex);
 
   // 2. Validate dependencies
   const dependencies = findDependencies(text, tokens);
@@ -485,7 +515,7 @@ export async function getDiagnostics(
   }
 
   // 3. Validate scoped registries
-  const registries = findScopedRegistries(text, tokens);
+  const registries = findScopedRegistries(text, tokens, lineIndex);
 
   for (const registry of registries) {
     // Check required fields
