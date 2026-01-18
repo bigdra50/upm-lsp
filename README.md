@@ -45,20 +45,12 @@ Supported paths:
 
 ## Installation
 
-### From npm (recommended)
-
-```bash
-npm install -g upm-lsp
-```
-
-### From source
-
 ```bash
 git clone https://github.com/bigdra50/upm-lsp.git
 cd upm-lsp
 npm install
 npm run build
-npm link
+npm link  # makes 'upm-lsp' command available globally
 ```
 
 ## Editor Setup
@@ -98,6 +90,24 @@ lspconfig.upm_lsp.setup({})
 
 VSCode extension is planned for future releases.
 
+## Configuration
+
+You can pass initialization options to customize behavior:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `networkValidation` | boolean | `true` | Enable/disable remote package existence checks |
+
+Example (nvim-lspconfig):
+
+```lua
+lspconfig.upm_lsp.setup({
+  init_options = {
+    networkValidation = false,  -- Disable network validation for faster diagnostics
+  },
+})
+```
+
 ## Architecture
 
 ```
@@ -107,31 +117,28 @@ src/
 ├── providers/
 │   ├── completionProvider.ts    # Package/version completion
 │   ├── hoverProvider.ts         # Package info on hover
-│   ├── diagnosticProvider.ts    # Validation and diagnostics
-│   └── index.ts
-└── registries/
-    ├── registryClient.ts        # Base interface and cache
-    ├── unityRegistry.ts         # packages.unity.com
-    ├── unityEditorRegistry.ts   # Local Unity Editor packages
-    ├── openUpmRegistry.ts       # package.openupm.com
-    ├── githubRegistry.ts        # GitHub API for git URLs
-    └── index.ts
+│   └── diagnosticProvider.ts    # Validation and diagnostics
+├── services/
+│   └── registryService.ts       # Registry orchestration and caching
+├── registries/
+│   ├── registryClient.ts        # Base class with LRU cache
+│   ├── unityRegistry.ts         # packages.unity.com
+│   ├── unityEditorRegistry.ts   # Local Unity Editor packages
+│   ├── openUpmRegistry.ts       # package.openupm.com
+│   └── githubRegistry.ts        # GitHub API for git URLs
+└── utils/
+    ├── jsonHelper.ts            # JSON parsing utilities
+    └── versionUtils.ts          # Semver comparison
 ```
 
 ## Development
 
 ```bash
-# Install dependencies
-npm install
-
-# Build
-npm run build
-
-# Watch mode (rebuild on changes)
-npm run watch
-
-# Link for local testing
-npm link
+npm install       # Install dependencies
+npm run build     # Build
+npm run watch     # Watch mode (rebuild on changes)
+npm test          # Run tests
+npm link          # Link for local testing
 ```
 
 ## How It Works
