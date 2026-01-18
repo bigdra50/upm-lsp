@@ -224,6 +224,7 @@ export async function getHover(
   registryClient: ProviderRegistryClient
 ): Promise<Hover | null> {
   const token = getTokenAtPosition(document, position);
+  console.error(`[hover] token=${token ? JSON.stringify({ type: token.type, value: token.value }) : 'null'}`);
   if (!token) {
     return null;
   }
@@ -259,8 +260,10 @@ export async function getHover(
 
       // Handle GitHub URLs
       const gitHubUrl = extractGitHubUrl(token.value);
+      console.error(`[hover:version] token.value=${token.value}, extracted=${gitHubUrl}`);
       if (gitHubUrl) {
         const repoInfo = await registryClient.getGitHubRepoInfo(gitHubUrl);
+        console.error(`[hover:version] repoInfo=${repoInfo ? 'found' : 'null'}`);
         if (repoInfo) {
           return {
             contents: createGitHubHoverContent(repoInfo),

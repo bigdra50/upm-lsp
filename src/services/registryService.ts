@@ -294,10 +294,16 @@ export class RegistryService {
 
       getGitHubRepoInfo: async (url: string): Promise<GitHubRepoInfo | null> => {
         try {
+          this.logger?.log(`[getGitHubRepoInfo] URL: ${url}`);
+
           const match = url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
-          if (!match) return null;
+          if (!match) {
+            this.logger?.log(`[getGitHubRepoInfo] URL pattern did not match`);
+            return null;
+          }
 
           const [, owner, repo] = match;
+          this.logger?.log(`[getGitHubRepoInfo] Fetching: ${owner}/${repo}`);
 
           // Fetch repo info from GitHub API directly (not package.json)
           const apiUrl = `https://api.github.com/repos/${owner}/${repo}`;
@@ -308,7 +314,10 @@ export class RegistryService {
             },
           });
 
-          if (!response.ok) return null;
+          if (!response.ok) {
+            this.logger?.log(`[getGitHubRepoInfo] API error: ${response.status} ${response.statusText}`);
+            return null;
+          }
 
           const repoData = await response.json() as {
             full_name: string;
