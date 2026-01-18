@@ -96,6 +96,8 @@ export interface GitHubRepoInfo {
   stargazersCount: number;
   /** Latest tag/release */
   latestTag: string | null;
+  /** All available tags (sorted newest first) */
+  tags: string[];
   /** Repository URL */
   htmlUrl: string;
 }

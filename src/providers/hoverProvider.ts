@@ -19,6 +19,7 @@ import {
   findTokenAtPosition,
   determineTokenType,
   extractGitHubUrl,
+  extractGitHubRef,
   getVersionForPackage,
   getPackageNameForVersion,
   TokenLocation,
@@ -229,7 +230,7 @@ function createVersionHoverContent(
 /**
  * Create hover content for a GitHub repository
  */
-function createGitHubHoverContent(info: GitHubRepoInfo): MarkupContent {
+function createGitHubHoverContent(info: GitHubRepoInfo, currentTag?: string): MarkupContent {
   const lines: string[] = [];
 
   lines.push(`## ${info.fullName}`);
@@ -244,6 +245,20 @@ function createGitHubHoverContent(info: GitHubRepoInfo): MarkupContent {
 
   if (info.latestTag) {
     lines.push(`**Latest Tag:** ${info.latestTag}`);
+  }
+
+  // Show tag list if available
+  if (info.tags.length > 0) {
+    lines.push("");
+    lines.push("**Available tags:**");
+    const recentTags = info.tags.slice(0, 5);
+    for (const tag of recentTags) {
+      const marker = tag === currentTag ? " ← current" : "";
+      lines.push(`- ${tag}${marker}`);
+    }
+    if (info.tags.length > 5) {
+      lines.push(`- ... (${info.tags.length - 5} more)`);
+    }
   }
 
   lines.push("");
@@ -285,8 +300,9 @@ export async function getHover(
         if (gitHubUrl) {
           const repoInfo = await registryClient.getGitHubRepoInfo(gitHubUrl);
           if (repoInfo) {
+            const currentRef = extractGitHubRef(versionValue);
             return {
-              contents: createGitHubHoverContent(repoInfo),
+              contents: createGitHubHoverContent(repoInfo, currentRef ?? undefined),
               range: token.range,
             };
           }
@@ -317,8 +333,9 @@ export async function getHover(
       if (gitHubUrl) {
         const repoInfo = await registryClient.getGitHubRepoInfo(gitHubUrl);
         if (repoInfo) {
+          const currentRef = extractGitHubRef(token.value);
           return {
-            contents: createGitHubHoverContent(repoInfo),
+            contents: createGitHubHoverContent(repoInfo, currentRef ?? undefined),
             range: token.range,
           };
         }
@@ -350,8 +367,9 @@ export async function getHover(
       if (gitHubUrl) {
         const repoInfo = await registryClient.getGitHubRepoInfo(gitHubUrl);
         if (repoInfo) {
+          const currentRef = extractGitHubRef(token.value);
           return {
-            contents: createGitHubHoverContent(repoInfo),
+            contents: createGitHubHoverContent(repoInfo, currentRef ?? undefined),
             range: token.range,
           };
         }

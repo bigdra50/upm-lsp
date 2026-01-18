@@ -456,3 +456,12 @@ export function extractGitHubUrl(value: string): string | null {
   }
   return null;
 }
+
+/**
+ * Extract tag/branch reference from GitHub URL
+ * e.g., "https://github.com/owner/repo.git#v1.0.0" -> "v1.0.0"
+ */
+export function extractGitHubRef(value: string): string | null {
+  const hashMatch = value.match(/#([^?]+)/);
+  return hashMatch ? hashMatch[1] : null;
+}

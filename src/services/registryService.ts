@@ -324,6 +324,7 @@ export class RegistryService {
             description: repoData.description,
             stargazersCount: repoData.stargazers_count,
             latestTag: tags[0] || null,
+            tags,
             htmlUrl: repoData.html_url,
           };
         } catch {
