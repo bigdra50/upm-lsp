@@ -414,6 +414,7 @@ export function isGitHubUrl(value: string): boolean {
 export function extractGitHubUrl(value: string): string | null {
   let url = value.replace(/^git\+/, "");
   url = url.replace(/#.*$/, "");
+  url = url.replace(/\?.*$/, ""); // Remove query params (?path=...)
   url = url.replace(/\.git$/, "");
   url = url.replace(/^git@github\.com:/, "https://github.com/");
 

@@ -131,6 +131,15 @@ describe("extractGitHubUrl", () => {
     );
   });
 
+  it("removes query parameters (?path=...)", () => {
+    expect(extractGitHubUrl("https://github.com/owner/repo.git?path=src/Package")).toBe(
+      "https://github.com/owner/repo"
+    );
+    expect(extractGitHubUrl("https://github.com/bigdra50/unity-cli.git?path=UnityBridge")).toBe(
+      "https://github.com/bigdra50/unity-cli"
+    );
+  });
+
   it("converts SSH URL to HTTPS", () => {
     expect(extractGitHubUrl("git@github.com:owner/repo.git")).toBe(
       "https://github.com/owner/repo"
