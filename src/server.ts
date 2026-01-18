@@ -42,6 +42,10 @@ const unityEditorRegistry = new UnityEditorRegistryClient();
 // Cache for versions (to avoid repeated lookups)
 const versionsCache = new Map<string, string[]>();
 
+// Debounce state for diagnostics validation
+const pendingValidations = new Map<string, { version: number; timer: ReturnType<typeof setTimeout> }>();
+const VALIDATION_DEBOUNCE_MS = 400;
+
 // Cache for package list (expensive to fetch)
 let packageListCache: PackageInfo[] | null = null;
 let packageListCacheTime = 0;
@@ -278,6 +282,37 @@ async function validateDocument(document: TextDocument): Promise<void> {
   connection.sendDiagnostics({ uri: document.uri, diagnostics });
 }
 
+/**
+ * Validate document with debouncing and version checking
+ * Cancels pending validation if document version has changed
+ */
+function validateDocumentDebounced(document: TextDocument): void {
+  const uri = document.uri;
+  const version = document.version;
+
+  // Cancel existing pending validation for this document
+  const pending = pendingValidations.get(uri);
+  if (pending) {
+    clearTimeout(pending.timer);
+  }
+
+  // Schedule new validation
+  const timer = setTimeout(async () => {
+    // Check if document version is still current (not stale)
+    const currentDoc = documents.get(uri);
+    if (!currentDoc || currentDoc.version !== version) {
+      // Document changed or closed, skip validation
+      pendingValidations.delete(uri);
+      return;
+    }
+
+    pendingValidations.delete(uri);
+    await validateDocument(currentDoc);
+  }, VALIDATION_DEBOUNCE_MS);
+
+  pendingValidations.set(uri, { version, timer });
+}
+
 // Document lifecycle handlers
 documents.onDidOpen((event) => {
   if (!isManifestFile(event.document.uri)) return;
@@ -289,7 +324,7 @@ documents.onDidOpen((event) => {
 documents.onDidChangeContent((event) => {
   if (!isManifestFile(event.document.uri)) return;
 
-  validateDocument(event.document);
+  validateDocumentDebounced(event.document);
 });
 
 documents.onDidSave((event) => {
@@ -300,6 +335,12 @@ documents.onDidSave((event) => {
 });
 
 documents.onDidClose((event) => {
+  // Cancel pending validation if exists
+  const pending = pendingValidations.get(event.document.uri);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingValidations.delete(event.document.uri);
+  }
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
 });
 
