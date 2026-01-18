@@ -25,6 +25,7 @@ import {
   OpenUpmRegistryClient,
   GitHubRegistryClient,
   UnityEditorRegistryClient,
+  Cache,
 } from "./registries";
 
 // Create LSP connection via stdio
@@ -40,7 +41,8 @@ const githubRegistry = new GitHubRegistryClient();
 const unityEditorRegistry = new UnityEditorRegistryClient();
 
 // Cache for versions (to avoid repeated lookups)
-const versionsCache = new Map<string, string[]>();
+// TTL: 5 minutes, max 500 entries (one entry per package)
+const versionsCache = new Cache<string[]>({ ttlMs: 5 * 60 * 1000, maxEntries: 500 });
 
 // Debounce state for diagnostics validation
 const pendingValidations = new Map<string, { version: number; timer: ReturnType<typeof setTimeout> }>();

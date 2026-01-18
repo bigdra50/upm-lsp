@@ -7,6 +7,7 @@ export {
   RegistryClient,
   NpmRegistryClient,
   Cache,
+  CacheOptions,
   RegistryError,
   RegistryErrorCode,
   NpmAllPackagesResponse,

@@ -6,43 +6,85 @@ import { PackageInfo } from "../types";
 import { sortVersionsDescending } from "./versionUtils";
 
 /**
- * Cache entry with TTL support
+ * Cache entry with TTL and LRU support
  */
 interface CacheEntry<T> {
   value: T;
   expiresAt: number;
+  lastAccessed: number;
 }
 
 /**
- * Generic cache with TTL support
+ * Cache configuration options
+ */
+export interface CacheOptions {
+  ttlMs: number;
+  maxEntries?: number;
+}
+
+const DEFAULT_MAX_ENTRIES = 1000;
+
+/**
+ * Generic cache with TTL and LRU eviction support
  */
 export class Cache<T> {
   private store = new Map<string, CacheEntry<T>>();
+  private readonly ttlMs: number;
+  private readonly maxEntries: number;
 
-  constructor(private ttlMs: number) {}
+  constructor(ttlMsOrOptions: number | CacheOptions) {
+    if (typeof ttlMsOrOptions === "number") {
+      this.ttlMs = ttlMsOrOptions;
+      this.maxEntries = DEFAULT_MAX_ENTRIES;
+    } else {
+      this.ttlMs = ttlMsOrOptions.ttlMs;
+      this.maxEntries = ttlMsOrOptions.maxEntries ?? DEFAULT_MAX_ENTRIES;
+    }
+  }
 
   /**
-   * Get cached value if not expired
+   * Get cached value if not expired (updates lastAccessed for LRU)
    */
   get(key: string): T | undefined {
     const entry = this.store.get(key);
     if (!entry) {
       return undefined;
     }
-    if (Date.now() > entry.expiresAt) {
+    const now = Date.now();
+    if (now > entry.expiresAt) {
       this.store.delete(key);
       return undefined;
     }
+    // Update lastAccessed for LRU tracking
+    entry.lastAccessed = now;
     return entry.value;
   }
 
   /**
-   * Store value with TTL
+   * Store value with TTL, evicting LRU entries if at capacity
    */
   set(key: string, value: T): void {
+    const now = Date.now();
+
+    // If key already exists, update it
+    if (this.store.has(key)) {
+      this.store.set(key, {
+        value,
+        expiresAt: now + this.ttlMs,
+        lastAccessed: now,
+      });
+      return;
+    }
+
+    // Evict if at capacity
+    if (this.store.size >= this.maxEntries) {
+      this.evictLru();
+    }
+
     this.store.set(key, {
       value,
-      expiresAt: Date.now() + this.ttlMs,
+      expiresAt: now + this.ttlMs,
+      lastAccessed: now,
     });
   }
 
@@ -68,6 +110,38 @@ export class Cache<T> {
     for (const [key, entry] of this.store) {
       if (now > entry.expiresAt) {
         this.store.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Get current cache size
+   */
+  get size(): number {
+    return this.store.size;
+  }
+
+  /**
+   * Evict the least recently used entry
+   */
+  private evictLru(): void {
+    // First, prune expired entries
+    this.prune();
+
+    // If still at capacity, evict LRU
+    if (this.store.size >= this.maxEntries) {
+      let lruKey: string | null = null;
+      let lruTime = Infinity;
+
+      for (const [key, entry] of this.store) {
+        if (entry.lastAccessed < lruTime) {
+          lruTime = entry.lastAccessed;
+          lruKey = key;
+        }
+      }
+
+      if (lruKey !== null) {
+        this.store.delete(lruKey);
       }
     }
   }
