@@ -17,6 +17,8 @@ import {
 } from "vscode-languageserver/node";
 
 import { TextDocument } from "vscode-languageserver-textdocument";
+import { URI } from "vscode-uri";
+import * as path from "path";
 
 import { LspSettings } from "./types";
 import { getCompletionsAsync, getHover, getDiagnostics } from "./providers";
@@ -166,10 +168,19 @@ function validateDocumentDebounced(document: TextDocument): void {
   pendingValidations.set(uri, { version, timer });
 }
 
+/**
+ * Update manifest directory for local package resolution
+ */
+function updateManifestDir(documentUri: string): void {
+  const manifestDir = path.dirname(URI.parse(documentUri).fsPath);
+  registryService.setManifestDir(manifestDir);
+}
+
 // Document lifecycle handlers
 documents.onDidOpen((event) => {
   if (!isManifestFile(event.document.uri)) return;
 
+  updateManifestDir(event.document.uri);
   connection.console.log(`Opened: ${event.document.uri}`);
   validateDocument(event.document);
 });
