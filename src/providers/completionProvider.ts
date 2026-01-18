@@ -6,6 +6,7 @@ import {
 } from "vscode-languageserver";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { PackageInfo } from "../types";
+import { getJsonContext, JsonContext } from "../utils/jsonHelper";
 
 /**
  * Top-level keys for manifest.json
@@ -85,169 +86,43 @@ export interface PackageSearchProvider {
 
 /**
  * Check if the cursor is within the key position of a dependencies entry
- *
- * @param text - Full document text
- * @param offset - Cursor offset position
- * @returns Object with isInKey and partial input string
+ * @deprecated Use getJsonContext from jsonHelper instead
  */
 export function isInDependenciesKey(text: string, offset: number): { isInKey: boolean; partial: string } {
-  const beforeCursor = text.slice(0, offset);
+  const document = TextDocument.create("", "json", 0, text);
+  const position = document.positionAt(offset);
+  const context = getJsonContext(document, position);
 
-  // Look for "dependencies" pattern and check nesting
-  const dependenciesMatch = beforeCursor.match(/"dependencies"\s*:\s*\{/);
-  if (!dependenciesMatch) {
-    return { isInKey: false, partial: "" };
+  if (context.type === "dependenciesKey") {
+    return { isInKey: true, partial: context.partial };
   }
-
-  const dependenciesStart = dependenciesMatch.index! + dependenciesMatch[0].length;
-
-  // Count braces to determine if we're still inside dependencies
-  let braceCount = 1;
-  for (let i = dependenciesStart; i < offset; i++) {
-    if (text[i] === "{") braceCount++;
-    if (text[i] === "}") braceCount--;
-    if (braceCount === 0) return { isInKey: false, partial: "" };
-  }
-
-  if (braceCount <= 0) {
-    return { isInKey: false, partial: "" };
-  }
-
-  // Check if we're in a key position (not after a colon)
-  const lineStart = beforeCursor.lastIndexOf("\n") + 1;
-  const currentLine = beforeCursor.slice(lineStart);
-
-  // If line has a colon, we're in value position
-  if (currentLine.includes(":")) {
-    return { isInKey: false, partial: "" };
-  }
-
-  // Extract partial input (what user has typed so far)
-  const quoteMatch = currentLine.match(/"([^"]*)"?$/);
-  const partial = quoteMatch ? quoteMatch[1] : "";
-
-  return { isInKey: true, partial };
+  return { isInKey: false, partial: "" };
 }
 
 /**
  * Check if the cursor is within the value position of a dependencies entry
- *
- * @param text - Full document text
- * @param offset - Cursor offset position
- * @returns Object with isInValue, packageName, and partial version
+ * @deprecated Use getJsonContext from jsonHelper instead
  */
 export function isInDependenciesValue(text: string, offset: number): { isInValue: boolean; packageName: string; partial: string } {
-  const beforeCursor = text.slice(0, offset);
+  const document = TextDocument.create("", "json", 0, text);
+  const position = document.positionAt(offset);
+  const context = getJsonContext(document, position);
 
-  // Look for "dependencies" pattern and check nesting
-  const dependenciesMatch = beforeCursor.match(/"dependencies"\s*:\s*\{/);
-  if (!dependenciesMatch) {
-    return { isInValue: false, packageName: "", partial: "" };
+  if (context.type === "dependenciesValue") {
+    return { isInValue: true, packageName: context.packageName, partial: context.partial };
   }
-
-  const dependenciesStart = dependenciesMatch.index! + dependenciesMatch[0].length;
-
-  // Count braces to determine if we're still inside dependencies
-  let braceCount = 1;
-  for (let i = dependenciesStart; i < offset; i++) {
-    if (text[i] === "{") braceCount++;
-    if (text[i] === "}") braceCount--;
-    if (braceCount === 0) return { isInValue: false, packageName: "", partial: "" };
-  }
-
-  if (braceCount <= 0) {
-    return { isInValue: false, packageName: "", partial: "" };
-  }
-
-  // Check if we're after a colon (value position)
-  const lineStart = beforeCursor.lastIndexOf("\n") + 1;
-  const currentLine = beforeCursor.slice(lineStart);
-
-  // Check for pattern like "key": followed by cursor
-  const colonPattern = /:\s*"?$/;
-  if (!colonPattern.test(currentLine)) {
-    return { isInValue: false, packageName: "", partial: "" };
-  }
-
-  // Extract package name from the line
-  const packageMatch = currentLine.match(/"([^"]+)"\s*:/);
-  const packageName = packageMatch ? packageMatch[1] : "";
-
-  // Extract partial version input
-  const versionMatch = currentLine.match(/:\s*"([^"]*)"?$/);
-  const partial = versionMatch ? versionMatch[1] : "";
-
-  return { isInValue: true, packageName, partial };
+  return { isInValue: false, packageName: "", partial: "" };
 }
 
 /**
  * Check if the cursor is within a scopedRegistries array object
+ * @deprecated Use getJsonContext from jsonHelper instead
  */
 export function isInScopedRegistriesObject(text: string, offset: number): boolean {
-  const beforeCursor = text.slice(0, offset);
-
-  const registriesMatch = beforeCursor.match(/"scopedRegistries"\s*:\s*\[/);
-  if (!registriesMatch) {
-    return false;
-  }
-
-  const registriesStart = registriesMatch.index! + registriesMatch[0].length;
-
-  let bracketCount = 1;
-  let braceCount = 0;
-  let inObject = false;
-
-  for (let i = registriesStart; i < offset; i++) {
-    const char = text[i];
-    if (char === "[") bracketCount++;
-    if (char === "]") bracketCount--;
-    if (char === "{") {
-      braceCount++;
-      inObject = true;
-    }
-    if (char === "}") {
-      braceCount--;
-      if (braceCount === 0) inObject = false;
-    }
-    if (bracketCount === 0) return false;
-  }
-
-  return inObject && braceCount > 0;
-}
-
-/**
- * Check if cursor is at top-level object position
- */
-function isAtTopLevel(text: string, offset: number): boolean {
-  const beforeCursor = text.slice(0, offset);
-
-  let braceDepth = 0;
-  let bracketDepth = 0;
-  let inString = false;
-  let escape = false;
-
-  for (const char of beforeCursor) {
-    if (escape) {
-      escape = false;
-      continue;
-    }
-    if (char === "\\") {
-      escape = true;
-      continue;
-    }
-    if (char === '"') {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-
-    if (char === "{") braceDepth++;
-    if (char === "}") braceDepth--;
-    if (char === "[") bracketDepth++;
-    if (char === "]") bracketDepth--;
-  }
-
-  return braceDepth === 1 && bracketDepth === 0;
+  const document = TextDocument.create("", "json", 0, text);
+  const position = document.positionAt(offset);
+  const context = getJsonContext(document, position);
+  return context.type === "scopedRegistriesObject";
 }
 
 /**
@@ -256,16 +131,16 @@ function isAtTopLevel(text: string, offset: number): boolean {
 function createPackageCompletionItems(packages: PackageInfo[], partial: string): CompletionItem[] {
   return packages
     .filter(pkg => pkg.name.toLowerCase().includes(partial.toLowerCase()))
-    .slice(0, 50) // Limit results
+    .slice(0, 50)
     .map((pkg, index) => ({
       label: pkg.name,
       kind: CompletionItemKind.Module,
       detail: pkg.displayName || pkg.name,
       documentation: pkg.description || undefined,
-      sortText: String(index).padStart(5, "0"), // Maintain order
+      sortText: String(index).padStart(5, "0"),
       insertText: `"${pkg.name}": "$1"`,
       insertTextFormat: InsertTextFormat.Snippet,
-      data: { packageName: pkg.name }, // For resolve
+      data: { packageName: pkg.name },
     }));
 }
 
@@ -286,6 +161,20 @@ function createVersionCompletionItems(versions: string[], partial: string): Comp
 }
 
 /**
+ * Get completions based on JSON context
+ */
+function getCompletionsForContext(context: JsonContext): CompletionItem[] {
+  switch (context.type) {
+    case "scopedRegistriesObject":
+      return SCOPED_REGISTRY_KEYS;
+    case "topLevel":
+      return TOP_LEVEL_KEYS;
+    default:
+      return [];
+  }
+}
+
+/**
  * Get completions based on cursor position in the document (sync version)
  * Returns static completions only
  */
@@ -293,20 +182,8 @@ export function getCompletions(
   document: TextDocument,
   position: Position
 ): CompletionItem[] {
-  const text = document.getText();
-  const offset = document.offsetAt(position);
-
-  // Check scopedRegistries object position
-  if (isInScopedRegistriesObject(text, offset)) {
-    return SCOPED_REGISTRY_KEYS;
-  }
-
-  // Check top-level position
-  if (isAtTopLevel(text, offset)) {
-    return TOP_LEVEL_KEYS;
-  }
-
-  return [];
+  const context = getJsonContext(document, position);
+  return getCompletionsForContext(context);
 }
 
 /**
@@ -317,24 +194,20 @@ export async function getCompletionsAsync(
   position: Position,
   searchProvider?: PackageSearchProvider
 ): Promise<CompletionItem[]> {
-  const text = document.getText();
-  const offset = document.offsetAt(position);
+  const context = getJsonContext(document, position);
 
-  // Check dependencies key position (package name completion)
-  const keyInfo = isInDependenciesKey(text, offset);
-  if (keyInfo.isInKey && searchProvider) {
-    // Search for packages matching partial input
-    const packages = await searchProvider.searchPackages(keyInfo.partial || "com.unity");
-    return createPackageCompletionItems(packages, keyInfo.partial);
+  // Handle dependencies key position (package name completion)
+  if (context.type === "dependenciesKey" && searchProvider) {
+    const packages = await searchProvider.searchPackages(context.partial || "com.unity");
+    return createPackageCompletionItems(packages, context.partial);
   }
 
-  // Check dependencies value position (version completion)
-  const valueInfo = isInDependenciesValue(text, offset);
-  if (valueInfo.isInValue && searchProvider && valueInfo.packageName) {
-    const versions = await searchProvider.getVersions(valueInfo.packageName);
-    return createVersionCompletionItems(versions, valueInfo.partial);
+  // Handle dependencies value position (version completion)
+  if (context.type === "dependenciesValue" && searchProvider && context.packageName) {
+    const versions = await searchProvider.getVersions(context.packageName);
+    return createVersionCompletionItems(versions, context.partial);
   }
 
-  // Fall back to sync completions
-  return getCompletions(document, position);
+  // Fall back to static completions
+  return getCompletionsForContext(context);
 }
