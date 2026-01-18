@@ -65,8 +65,11 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
 
   const capabilities = params.capabilities;
 
+  // Check if client supports dynamic registration for configuration
   hasConfigurationCapability = !!(
-    capabilities.workspace && capabilities.workspace.configuration
+    capabilities.workspace &&
+    capabilities.workspace.configuration &&
+    capabilities.workspace.didChangeConfiguration?.dynamicRegistration
   );
   hasWorkspaceFolderCapability = !!(
     capabilities.workspace && capabilities.workspace.workspaceFolders
